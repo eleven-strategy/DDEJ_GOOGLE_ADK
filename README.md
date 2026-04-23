@@ -1,157 +1,330 @@
-# PPT Translator Agent
+﻿# 🎯 Lab — PPT Translator Agent with Google ADK
 
-A **Google ADK** agent connected to **Azure OpenAI** (via LiteLLM) that translates PowerPoint presentations into any language while **preserving every formatting detail** — bold runs, colored text, font sizes, tables, grouped shapes, and speaker notes.
+> **Course exercise** — build a tool-calling AI agent from scratch.
+>
+> Branches:
+> | Branch | Purpose |
+> |--------|---------|
+> | `exercise` | Starter code — this is where you work |
+> | `solution` | Reference implementation |
 
 ---
 
-## How it works
+## What you will build
 
-### The formatting problem
+A conversational agent that translates a PowerPoint presentation into any
+language while **preserving every formatting detail** — bold text, colours,
+font sizes, tables, grouped shapes, and speaker notes.
 
-A single sentence in a slide can be split across several "runs" inside a paragraph:
+The user simply types:
+
+```
+Translate report.pptx to French
+```
+
+…and the agent calls two tools in sequence, then reports the results.
+
+---
+
+## Architecture overview
+
+```
+┌─────────────────────────────────────────────────┐
+│                   main.py (CLI)                 │
+│  Runner ──► LlmAgent (Google ADK)               │
+│                  │                              │
+│         ┌────────┴────────┐                     │
+│         ▼                 ▼                     │
+│   extract_pptx       rebuild_pptx               │
+│   (Tool 1)           (Tool 2)                   │
+│         │                 │                     │
+│    python-pptx      Azure OpenAI                │
+└─────────────────────────────────────────────────┘
+```
+
+### Tool 1 — `extract_pptx`
+
+Reads the PPTX, encodes every paragraph as a tagged string, and saves the
+result to a JSON file.
+
+### Tool 2 — `rebuild_pptx`
+
+Reads that JSON, sends the encoded paragraphs to Azure OpenAI in batches for
+translation, then re-opens the original PPTX and writes the translations back
+run-by-run — formatting untouched.
+
+---
+
+## The "tagged runs" trick 🔑
+
+A single visible sentence in a slide is often stored as **multiple runs**,
+each with its own formatting:
 
 ```
 "Important: " (bold, blue)  +  "do not forget"  +  "!"  (red)
 ```
 
-Naively translating each run independently breaks sentence context and produces poor output. Translating the whole paragraph as plain text loses the run boundaries, so you can't restore the formatting.
+Sending each run to the LLM independently breaks sentence context.  Sending
+the whole paragraph as plain text loses the run boundaries, so you can't put
+the formatting back.
 
-### The solution — tagged runs
-
-Each run is wrapped in `[[N]]...[[/N]]` markers before being sent to the model:
+**Solution:** wrap every run in `[[N]]…[[/N]]` markers before translation:
 
 ```
 [[0]]Important: [[/0]][[1]]do not forget[[/1]][[2]]![[/2]]
 ```
 
-The model translates the text **inside** the markers while keeping them intact:
+The model translates the text *inside* the markers and returns:
 
 ```
 [[0]]Important : [[/0]][[1]]ne pas oublier[[/1]][[2]] ![[/2]]
 ```
 
-The translated fragments are then written back into the original runs — their formatting (bold, color, font, size) is never touched.
-
-### Batching
-
-All paragraphs in a shape are sent in a **single API call** (configurable batch size, default 30 paragraphs). This keeps terminology consistent within a shape and reduces API round-trips.
+Each fragment is then written back into the correct run.
 
 ---
 
 ## Project structure
 
 ```
-ppt_translator_agent/
-├── src/
-│   └── ppt_translator/
-│       ├── __init__.py
-│       ├── agent.py          # Azure OpenAI agent with tool-calling loop
-│       ├── prompts.py        # system prompt
-│       └── tools/
-│           ├── __init__.py
-│           └── translator.py # core translation logic
-├── main.py                   # CLI entry point
-├── .env.example
-├── requirements.txt
-└── README.md
+DDEJ_GOOGLE_ADK/
+├── .env.example                   ← copy to .env and fill in your keys
+├── pyproject.toml                 ← Poetry project & dependencies
+├── main.py                        ← CLI entry point (mostly given)
+└── ppt_translator/
+    ├── __init__.py
+    ├── agent.py                   ← Step 2: wire model + tools
+    ├── prompts.py                 ← Step 1: write the system prompt
+    └── tools/
+        ├── __init__.py
+        ├── _common.py             ← Step 3: encode / decode paragraphs
+        ├── extractor.py           ← Step 4: extract text to JSON
+        └── rebuilder.py           ← Step 5: translate + rebuild PPTX
 ```
-
----
-
-## Architecture
-
-```
-Google ADK Runner
-   └── LlmAgent
-         ├── model: LiteLlm("azure/gpt-4o")   ← routes to Azure OpenAI
-         └── tools: [translate_pptx]           ← pure Python function
-```
-
-Google ADK supports non-Gemini models via its built-in **LiteLLM** integration.
-`LiteLlm(model="azure/<deployment>")` is the official way to point the agent at Azure OpenAI — no custom loop needed.
 
 ---
 
 ## Setup
 
+### 1 — Prerequisites
+
+- Python ≥ 3.11
+- An **Azure OpenAI** resource with a deployed model (e.g. `gpt-4o`)
+
+### 2 — Install dependencies
+
+Make sure [Poetry](https://python-poetry.org/docs/#installation) is installed, then:
+
 ```bash
-# 1. Install dependencies
-pip install -r requirements.txt
-
-# 2. Configure credentials
-cp .env.example .env
-# Edit .env with your Azure OpenAI values
-
-# 3. Run
-python main.py
-
-# Optional: open the ADK web UI (auto-discovers root_agent)
-adk web
+cd DDEJ_GOOGLE_ADK
+poetry install
+poetry shell
 ```
 
-### Required environment variables
+This creates a virtual environment and installs all dependencies declared in
+`pyproject.toml` automatically.
+
+### 3 — Configure environment variables
+
+```bash
+cp .env.example .env
+# then edit .env with your Azure OpenAI credentials
+```
 
 | Variable | Description |
 |---|---|
-| `AZURE_API_KEY` | Your Azure OpenAI API key (LiteLLM naming) |
-| `AZURE_API_BASE` | e.g. `https://my-resource.openai.azure.com/` |
+| `AZURE_API_KEY` | Your Azure OpenAI API key |
+| `AZURE_API_BASE` | Endpoint, e.g. `https://my-resource.openai.azure.com/` |
 | `AZURE_API_VERSION` | API version, e.g. `2024-08-01-preview` |
 | `AZURE_OPENAI_DEPLOYMENT` | Deployment name, e.g. `gpt-4o` |
 
 ---
 
-## Usage
+## Exercises
 
-### Interactive CLI
+Work through the steps **in order** — each one builds on the previous.
+
+---
+
+### Step 1 — Write the system prompt (`prompts.py`) ⭐
+
+**File:** `ppt_translator/prompts.py`
+
+Write a string called `SYSTEM_PROMPT` that tells the agent:
+
+1. What it is.
+2. What its two tools do and what arguments they take.
+3. That it **must always call `extract_pptx` first, then `rebuild_pptx`**.
+4. The default naming conventions for the output files.
+5. What to report back to the user after both steps.
+
+> **Tip:** A clear, precise prompt is critical for reliable tool-calling.
+> Be explicit about the order of steps and the exact argument names.
+
+---
+
+### Step 2 — Wire the agent (`agent.py`) ⭐
+
+**File:** `ppt_translator/agent.py`
+
+Two small TODOs:
+
+**a)** Build the correct LiteLLM model string.
+LiteLLM addresses Azure OpenAI models as `"azure/<deployment_name>"`.
+The deployment name is in the `AZURE_OPENAI_DEPLOYMENT` environment variable.
+
+**b)** Pass `extract_pptx` and `rebuild_pptx` to the `tools` parameter of
+`LlmAgent`.
+
+> **Tip:** `LlmAgent` accepts plain Python functions as tools — it
+> automatically reads their docstrings and type hints to build the tool schema.
+
+---
+
+### Step 3 — Encode and decode paragraphs (`_common.py`) ⭐⭐
+
+**File:** `ppt_translator/tools/_common.py`
+
+This is the heart of the formatting-preservation mechanism.
+
+**3a) `encode_paragraph(para)`**
+
+Given a python-pptx `Paragraph` object, return `(encoded_string, active_runs)`:
+
+- `active_runs` = `[(original_index, run), ...]` for every run where `run.text` is non-empty.
+- If no active runs → return `("", [])`.
+- If exactly one active run → return `(run.text, [(idx, run)])` — no markers needed.
+- If multiple runs → build `"[[0]]text[[/0]][[1]]text[[/1]]…"`.
+
+**3b) `decode_paragraph(translated, active)`**
+
+Write the translated fragments back into the run objects:
+
+- If `active` is empty → return immediately.
+- If one run → `run.text = translated`.
+- Otherwise, use `_TAG_RE.finditer(translated)` to parse `{index: text}` pairs and update each run.
+- **Fallback:** if the LLM dropped the markers, put everything in `active[0][1].text` and set all others to `""`.
+
+> **Note:** the shape-traversal functions (`visit_slide`, etc.) are already
+> implemented. Read them to understand how your encode/decode functions will
+> be called.
+
+---
+
+### Step 4 — Implement the extractor (`extractor.py`) ⭐⭐
+
+**File:** `ppt_translator/tools/extractor.py`
+
+Implement `extract_pptx(input_path, output_json_path, include_notes=True)`.
+
+Suggested algorithm:
+
+1. Return `{"error": "…"}` if `input_path` does not exist.
+2. Open the presentation: `prs = Presentation(str(src))`.
+3. Create an empty `paragraphs` list.
+4. Iterate over `prs.slides`.  For each slide call `visit_slide(slide, callback, include_notes)` where `callback` appends a dict to `paragraphs`:
+   ```python
+   {
+       "id":         f"s{slide_idx}:p{len(paragraphs)}",
+       "encoded":    encoded,
+       "plain_text": "".join(r.text for _, r in active),
+   }
+   ```
+5. Write the result as JSON to `output_json_path` (create parent dirs).
+6. Return the success summary dict.
+
+---
+
+### Step 5 — Implement the rebuilder (`rebuilder.py`) ⭐⭐⭐
+
+**File:** `ppt_translator/tools/rebuilder.py`
+
+**5a) `_translate_batch(client, deployment, encoded_paragraphs, target_language)`**
+
+Build a numbered prompt, call `client.chat.completions.create`, parse the
+numbered response back into a list.
+
+Example prompt sent to the model:
 
 ```
-You: translate deck.pptx to Spanish
-  [tool] translate_pptx({"input_path": "deck.pptx", "output_path": "deck_Spanish.pptx", "target_language": "Spanish"})
-
-Agent: Done! Translated 12 slides (147 paragraphs) in 8 API calls → deck_Spanish.pptx
+PARA_0: [[0]]Hello[[/0]]
+PARA_1: Some plain text
+PARA_2: [[0]]Bonjour[[/0]] le monde
 ```
 
-### Direct Python call
+The model must return the same format with translated content.
+Parse each `PARA_N: …` line; fall back to the original if a line is missing.
 
-```python
-from dotenv import load_dotenv
-load_dotenv()
+**5b) `rebuild_pptx(input_path, extraction_json_path, output_path, target_language, batch_size=30)`**
 
-from src.ppt_translator import translate_pptx
+1. Validate files exist.
+2. Load the extraction JSON.
+3. Create `AzureOpenAI` client from env vars.
+4. Translate in batches using `_translate_batch`.
+5. Re-open the original PPTX and apply translations with `visit_slide` +
+   `decode_paragraph` (use `iter` + `next` over `translated_list`).
+6. Save the new PPTX and return the summary dict.
 
-result = translate_pptx(
-    input_path="deck.pptx",
-    output_path="deck_fr.pptx",
-    target_language="French",
-    translate_notes=True,   # include speaker notes
-    batch_size=30,          # paragraphs per API call
-)
-print(result)
-# {'status': 'success', 'slides': 12, 'paragraphs_translated': 147, 'api_calls': 8, ...}
+---
+
+## Running the agent
+
+Once all steps are implemented:
+
+```bash
+python main.py
+```
+
+```
+============================================================
+  PPT Translator Agent  (Google ADK · Azure OpenAI)
+============================================================
+Example: translate report.pptx to French
+Type 'quit' or Ctrl-C to exit.
+
+You: translate data/demo.pptx to Spanish
+Agent: Done! Translated 3 slides, 47 paragraphs (2 API calls).
+       Output saved to data/demo_Spanish.pptx
 ```
 
 ---
 
-## What is preserved
+## Evaluation checklist
 
-| Element | Preserved |
-|---|---|
-| Bold / italic / underline | Yes — run-level |
-| Font color (hex / theme) | Yes |
-| Font size | Yes |
-| Font family | Yes |
-| Hyperlinks | Yes (text only — href untouched) |
-| Bullet points & numbering | Yes |
-| Text alignment | Yes |
-| Tables | Yes (each cell translated) |
-| Grouped shapes | Yes (recursive) |
-| Speaker notes | Yes (optional) |
-| Images, charts, animations | Untouched |
+| # | Item | Points |
+|---|------|--------|
+| 1 | `SYSTEM_PROMPT` clearly describes both tools and forces correct order | 10 |
+| 2 | Agent uses correct `azure/<deployment>` model string and lists both tools | 10 |
+| 3a | `encode_paragraph` handles 0 / 1 / N runs correctly | 20 |
+| 3b | `decode_paragraph` handles matched markers and the fallback case | 20 |
+| 4 | `extract_pptx` produces valid JSON with correct paragraph count | 20 |
+| 5 | `rebuild_pptx` produces a valid PPTX with translated text and intact formatting | 20 |
 
 ---
 
-## Limitations
+## Hints & common pitfalls
 
-- Does not translate text embedded inside images or charts.
-- Very long runs (> ~4 000 tokens per batch) may need a lower `batch_size`.
-- The model occasionally drops a `[[N]]` marker on complex mixed-language slides; the fallback puts all translated text in the first run of that paragraph.
+- **Traversal order matters.** The extractor and rebuilder both call `visit_slide`.
+  They visit shapes in the same order, so `translated_list[i]` always applies to
+  the *i*-th paragraph found by the extractor — no ID matching needed.
+
+- **`_TAG_RE`** is already defined in `_common.py`. Use it in `decode_paragraph`.
+
+- **Fallback in `decode_paragraph`:** the LLM occasionally drops the `[[N]]`
+  markers. Always code the fallback that dumps everything into the first run.
+
+- **Environment variables** for the rebuilder:
+  `AZURE_API_KEY`, `AZURE_API_BASE`, `AZURE_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT`.
+
+- **`temperature=0.1`** in the translation call keeps the output deterministic
+  and reduces the chance the model invents or drops markers.
+
+---
+
+## References
+
+- [Google ADK documentation](https://google.github.io/adk-docs/)
+- [LiteLLM — Azure provider](https://docs.litellm.ai/docs/providers/azure)
+- [python-pptx documentation](https://python-pptx.readthedocs.io/)
+- [Azure OpenAI Python SDK](https://learn.microsoft.com/azure/ai-services/openai/quickstart?pivots=programming-language-python)
+
