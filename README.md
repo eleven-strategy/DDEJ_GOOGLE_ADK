@@ -24,24 +24,6 @@ Translate report.pptx to French
 
 …and the agent calls two tools in sequence, then reports the results.
 
----
-
-## Architecture overview
-
-```
-┌─────────────────────────────────────────────────┐
-│                   main.py (CLI)                 │
-│  Runner ──► LlmAgent (Google ADK)               │
-│                  │                              │
-│         ┌────────┴────────┐                     │
-│         ▼                 ▼                     │
-│   extract_pptx       rebuild_pptx               │
-│   (Tool 1)           (Tool 2)                   │
-│         │                 │                     │
-│    python-pptx      Azure OpenAI                │
-└─────────────────────────────────────────────────┘
-```
-
 ### Tool 1 — `extract_pptx`
 
 Reads the PPTX, encodes every paragraph as a tagged string, and saves the
@@ -146,7 +128,7 @@ Work through the steps **in order** — each one builds on the previous.
 
 ---
 
-### Step 1 — Write the system prompt (`prompts.py`) ⭐
+### Step 1 — Write the system prompt (`prompts.py`)
 
 **File:** `ppt_translator/prompts.py`
 
@@ -163,7 +145,7 @@ Write a string called `SYSTEM_PROMPT` that tells the agent:
 
 ---
 
-### Step 2 — Wire the agent (`agent.py`) ⭐
+### Step 2 — Wire the agent (`agent.py`)
 
 **File:** `ppt_translator/agent.py`
 
@@ -181,7 +163,7 @@ The deployment name is in the `AZURE_OPENAI_DEPLOYMENT` environment variable.
 
 ---
 
-### Step 3 — Encode and decode paragraphs (`_common.py`) ⭐⭐
+### Step 3 — Encode and decode paragraphs (`_common.py`)
 
 **File:** `ppt_translator/tools/_common.py`
 
@@ -211,7 +193,7 @@ Write the translated fragments back into the run objects:
 
 ---
 
-### Step 4 — Implement the extractor (`extractor.py`) ⭐⭐
+### Step 4 — Implement the extractor (`extractor.py`)
 
 **File:** `ppt_translator/tools/extractor.py`
 
@@ -235,7 +217,7 @@ Suggested algorithm:
 
 ---
 
-### Step 5 — Implement the rebuilder (`rebuilder.py`) ⭐⭐⭐
+### Step 5 — Implement the rebuilder (`rebuilder.py`)
 
 **File:** `ppt_translator/tools/rebuilder.py`
 
@@ -272,53 +254,12 @@ Parse each `PARA_N: …` line; fall back to the original if a line is missing.
 Once all steps are implemented:
 
 ```bash
+adk web
+```
+or 
+```bash
 python main.py
 ```
-
-```
-============================================================
-  PPT Translator Agent  (Google ADK · Azure OpenAI)
-============================================================
-Example: translate report.pptx to French
-Type 'quit' or Ctrl-C to exit.
-
-You: translate data/demo.pptx to Spanish
-Agent: Done! Translated 3 slides, 47 paragraphs (2 API calls).
-       Output saved to data/demo_Spanish.pptx
-```
-
----
-
-## Evaluation checklist
-
-| # | Item | Points |
-|---|------|--------|
-| 1 | `SYSTEM_PROMPT` clearly describes both tools and forces correct order | 10 |
-| 2 | Agent uses correct `azure/<deployment>` model string and lists both tools | 10 |
-| 3a | `encode_paragraph` handles 0 / 1 / N runs correctly | 20 |
-| 3b | `decode_paragraph` handles matched markers and the fallback case | 20 |
-| 4 | `extract_pptx` produces valid JSON with correct paragraph count | 20 |
-| 5 | `rebuild_pptx` produces a valid PPTX with translated text and intact formatting | 20 |
-
----
-
-## Hints & common pitfalls
-
-- **Traversal order matters.** The extractor and rebuilder both call `visit_slide`.
-  They visit shapes in the same order, so `translated_list[i]` always applies to
-  the *i*-th paragraph found by the extractor — no ID matching needed.
-
-- **`_TAG_RE`** is already defined in `_common.py`. Use it in `decode_paragraph`.
-
-- **Fallback in `decode_paragraph`:** the LLM occasionally drops the `[[N]]`
-  markers. Always code the fallback that dumps everything into the first run.
-
-- **Environment variables** for the rebuilder:
-  `AZURE_API_KEY`, `AZURE_API_BASE`, `AZURE_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT`.
-
-- **`temperature=0.1`** in the translation call keeps the output deterministic
-  and reduces the chance the model invents or drops markers.
-
 ---
 
 ## References
