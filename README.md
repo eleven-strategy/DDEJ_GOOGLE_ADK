@@ -1,11 +1,11 @@
 ﻿# 🎯 Lab — PPT Translator Agent with Google ADK
 
-> **Course exercise** — build a tool-calling AI agent from scratch.
+> **Exercise**
 >
 > Branches:
 > | Branch | Purpose |
 > |--------|---------|
-> | `exercise` | Starter code — this is where you work |
+> | `exercise` | Starter code to fill |
 > | `solution` | Reference implementation |
 
 ---
@@ -33,7 +33,7 @@ result to a JSON file.
 
 Reads that JSON, sends the encoded paragraphs to Azure OpenAI in batches for
 translation, then re-opens the original PPTX and writes the translations back
-run-by-run — formatting untouched.
+run-by-run.
 
 ---
 
@@ -124,7 +124,7 @@ cp .env.example .env
 
 ## Exercises
 
-Work through the steps **in order** — each one builds on the previous.
+Work through the steps **in order**, each one builds on the previous.
 
 ---
 
@@ -158,7 +158,7 @@ The deployment name is in the `AZURE_OPENAI_DEPLOYMENT` environment variable.
 **b)** Pass `extract_pptx` and `rebuild_pptx` to the `tools` parameter of
 `LlmAgent`.
 
-> **Tip:** `LlmAgent` accepts plain Python functions as tools — it
+> **Tip:** `LlmAgent` accepts plain Python functions as tools, it
 > automatically reads their docstrings and type hints to build the tool schema.
 
 ---
@@ -175,7 +175,7 @@ Given a python-pptx `Paragraph` object, return `(encoded_string, active_runs)`:
 
 - `active_runs` = `[(original_index, run), ...]` for every run where `run.text` is non-empty.
 - If no active runs → return `("", [])`.
-- If exactly one active run → return `(run.text, [(idx, run)])` — no markers needed.
+- If exactly one active run → return `(run.text, [(idx, run)])`.
 - If multiple runs → build `"[[0]]text[[/0]][[1]]text[[/1]]…"`.
 
 **3b) `decode_paragraph(translated, active)`**
